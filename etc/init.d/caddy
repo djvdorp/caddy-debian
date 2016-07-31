@@ -9,18 +9,21 @@
 # Description:       starts the caddy web server
 ### END INIT INFO
 
+CADDYBIN=$(which caddy)
 NAME=caddy
 DESC=caddy
-CADDYBIN=$(which caddy)
-PIDFILE=/var/run/$NAME.pid
 
 RUNAS=caddy
+PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
 CONFIGFILE=/etc/caddy/Caddyfile
 WEBROOT=/var/tmp
-PORT=2015
 
-DAEMON="$CADDYBIN -agree=true -log=$LOGFILE -conf=$CONFIGFILE -root=$WEBROOT -pidfile=$PIDFILE -port=$PORT"
+DAEMON="$CADDYBIN"
+DAEMON_OPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE -root=$WEBROOT -pidfile=$PIDFILE"
+
+STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
+
 
 CADDYHOME=/etc/caddy/ssl
 export HOME=$CADDYHOME
@@ -60,12 +63,14 @@ status() {
 
 stop() {
   printf "%-50s" "Stopping $NAME"
-  if [ ! -f "$PIDFILE" ] || ! kill -0 $(cat "$PIDFILE"); then
-    echo 'Service not running' >&2
-    return 1
-  fi
-  kill -15 $(cat "$PIDFILE") && rm -f "$PIDFILE"
+  start-stop-daemon --stop --quiet --retry=$STOP_SCHEDULE --pidfile $PIDFILE --remove-pidfile --name $NAME
   echo 'Service stopped' >&2
+}
+
+reload() {
+  printf "%-50s" "Reloading $NAME configuration"
+  start-stop-daemon --stop --signal USR1 --quiet --pidfile $PIDFILE --name $NAME
+  return 0
 }
 
 case "$1" in
@@ -78,10 +83,13 @@ case "$1" in
   stop)
     stop
     ;;
+  reload)
+    reload
+    ;;
   restart)
     stop
     start
     ;;
   *)
-    echo "Usage: $0 {start|stop|restart|status}"
+    echo "Usage: $0 {start|stop|restart|reload|status}"
 esac
