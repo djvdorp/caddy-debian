@@ -6,90 +6,87 @@
 # Default-Start:     2 3 4 5
 # Default-Stop:      0 1 6
 # Short-Description: starts the caddy web server
-# Description:       starts the caddy web server
+# Description:       starts caddy using start-stop-daemon
 ### END INIT INFO
 
-CADDYBIN=$(which caddy)
-NAME=caddy
-DESC=caddy
+# Original Author: Frédéric Galusik (fredg)
+# Maintainer: Daniel van Dorp (djvdorp)
 
-RUNAS=caddy
+DESC="the caddy web server"
+NAME=caddy
+DAEMON=$(which caddy)
+
+DAEMONUSER=www-data
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
 CONFIGFILE=/etc/caddy/Caddyfile
-WEBROOT=/var/tmp
+DAEMONOPTS="-agree=true -pidfile=$PIDFILE -log=$LOGFILE -conf=$CONFIGFILE"
 
-DAEMON="$CADDYBIN"
-DAEMON_OPTS="-agree=true -log=$LOGFILE -conf=$CONFIGFILE -root=$WEBROOT -pidfile=$PIDFILE"
-
+USERBIND="setcap cap_net_bind_service=+ep"
 STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
 
+test -x $DAEMON || exit 0
 
-CADDYHOME=/etc/caddy/ssl
-export HOME=$CADDYHOME
+# Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
+export CADDYPATH=/etc/caddy/ssl
 
-setcap cap_net_bind_service=+ep $CADDYBIN
+# Set the ulimits
 ulimit -n 8192
 
 
 start() {
-  printf "%-50s" "Starting $NAME..."
-  if [ -f $PIDFILE ] && kill -0 $(cat $PIDFILE); then
-    echo 'Service already running' >&2
-    return 1
-  fi
-  if [ ! -f $LOGFILE ]; then
-    touch $LOGFILE
-    chown $RUNAS $LOGFILE
-  fi
-  local CMD="$DAEMON &> \"$LOGFILE\" & echo \$!"
-  su -c "$CMD" $RUNAS > "$PIDFILE"
-  echo 'Service started' >&2
-}
-
-status() {
-  printf "%-50s" "Checking $NAME..."
-  if [ -f $PIDFILE ]; then
-      PID=`cat $PIDFILE`
-      if [ -z "`ps axf | grep ${PID} | grep -v grep`" ]; then
-          printf "%s\n" "Process dead but pidfile exists"
-      else
-          echo "Running"
-      fi
-  else
-      printf "%s\n" "Service not running"
-  fi
+    $USERBIND $DAEMON
+    start-stop-daemon --start --quiet --make-pidfile --pidfile $PIDFILE \
+        --background --chuid $DAEMONUSER --oknodo --exec $DAEMON -- $DAEMONOPTS
 }
 
 stop() {
-  printf "%-50s" "Stopping $NAME"
-  start-stop-daemon --stop --quiet --retry=$STOP_SCHEDULE --pidfile $PIDFILE --remove-pidfile --name $NAME
-  echo 'Service stopped' >&2
+    start-stop-daemon --stop --quiet --remove-pidfile --pidfile $PIDFILE \
+        --retry=$STOP_SCHEDULE --name $NAME --oknodo
 }
 
 reload() {
-  printf "%-50s" "Reloading $NAME configuration"
-  start-stop-daemon --stop --signal USR1 --quiet --pidfile $PIDFILE --name $NAME
-  return 0
+    start-stop-daemon --stop --quiet --signal USR1 --pidfile $PIDFILE \
+        --name $NAME
+}
+
+status() {
+    if [ -f $PIDFILE ]; then
+        if kill -0 $(cat "$PIDFILE"); then
+            echo "$NAME is running"
+        else
+            echo "$NAME process is dead, but pidfile exists"
+        fi
+    else
+        echo "$NAME is not running"
+    fi
 }
 
 case "$1" in
-  start)
-    start
+    start)
+        echo "Starting $NAME"
+        start
     ;;
-  status)
-    status
+    stop)
+        echo "Stopping $NAME"
+        stop
     ;;
-  stop)
-    stop
+    restart)
+        echo "Restarting $NAME"
+        stop
+        start
     ;;
-  reload)
-    reload
+    reload)
+        echo "Reloading $NAME configuration"
+        reload
     ;;
-  restart)
-    stop
-    start
+    status)
+        status
     ;;
-  *)
-    echo "Usage: $0 {start|stop|restart|reload|status}"
+    *)
+        echo "Usage: $0 {start|stop|restart|reload|status}"
+        exit 2
+    ;;
 esac
+
+exit 0
