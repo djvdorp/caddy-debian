@@ -20,12 +20,15 @@ DAEMONUSER=www-data
 PIDFILE=/var/run/$NAME.pid
 LOGFILE=/var/log/$NAME.log
 CONFIGFILE=/etc/caddy/Caddyfile
-DAEMONOPTS="-agree=true --pidfile=$PIDFILE log=$LOGFILE -conf=$CONFIGFILE"
+DAEMONOPTS="-agree=true -pidfile=$PIDFILE -log=$LOGFILE -conf=$CONFIGFILE"
 
 USERBIND="setcap cap_net_bind_service=+ep"
 STOP_SCHEDULE="${STOP_SCHEDULE:-QUIT/5/TERM/5/KILL/5}"
 
 test -x $DAEMON || exit 0
+
+. /lib/init/vars.sh
+. /lib/lsb/init-functions
 
 # Set the CADDYPATH; Let's Encrypt certificates will be written to this directory.
 export CADDYPATH=/etc/caddy/ssl
@@ -50,43 +53,30 @@ reload() {
         --name $NAME
 }
 
-status() {
-    if [ -f $PIDFILE ]; then
-        PID=`cat $PIDFILE`
-        if [ -z "`ps axf | grep ${PID} | grep -v grep`" ]; then
-            echo "$NAME process is dead, but pidfile exists"
-        else
-            echo "$NAME is running"
-        fi
-    else
-        echo "$NAME is not running"
-    fi
-}
-
 case "$1" in
     start)
-        echo "Starting $NAME"
+        log_daemon_msg "Starting $NAME"
         start
     ;;
     stop)
-        echo "Stopping $NAME"
+        log_daemon_msg "Stopping $NAME"
         stop
     ;;
     restart)
-        echo "Restarting $NAME"
+        log_daemon_msg "Restarting $NAME"
         stop
         start
     ;;
     reload)
-        echo "Reloading $NAME configuration"
+        log_daemon_msg "Reloading $NAME configuration"
         reload
     ;;
     status)
-        status
+        status_of_proc -p $PIDFILE "$DAEMON" "$NAME" && exit 0 || exit $?
     ;;
     *)
-        echo "Usage: $0 {start|stop|restart|reload|status}"
-        exit 2
+        log_action_msg "Usage: $0 {start|stop|restart|reload|status}"
+        exit 3
     ;;
 esac
 
